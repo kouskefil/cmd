@@ -1,0 +1,136 @@
+#!/bin/bash
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <parent directory> <module name> [normal | plugin]"
+    exit 1
+elif [ $# -eq 2 ]; then
+    type=normal
+else
+    type=$3
+fi
+
+dirname=$1/$2
+lib=""
+
+echo directories creating...
+mkdir -p ${dirname}/www ${dirname}/libsrc ${dirname}/sql 
+mkdir ${dirname}/www/views ${dirname}/www/services ${dirname}/www/controllers 
+
+if [ "$type" == "plugin" ] && [ -e $1/CMakeLists.txt ]; then
+    echo "add_subdirectory($2)" >> $1/CMakeLists.txt
+fi
+
+echo cmake files editing...
+fname=${dirname}/CMakeLists.txt
+MODNAME=`echo $2 #| capitalize -u`
+
+if [ "$type" == "normal" ]; then
+    lib=MODULE
+    echo "
+cmake_minimum_required (VERSION 3.0)
+project ($2 C)
+
+# The version number.
+set (${MODNAME}_VERSION_MAJOR 0)
+set (${MODNAME}_VERSION_MINOR 1)
+
+configure_file (
+  \"\${PROJECT_SOURCE_DIR}/$2Config.h.in\"
+  \"\${PROJECT_BINARY_DIR}/$2Config.h\"
+  )
+
+option(FASTCALL_DISABLE \"fast call disable\" ON)
+
+include_directories (\${INCDIRS}
+  \${PROJECT_SOURCE_DIR} 
+  
+  # add the binary tree to the search path for include files
+  # so that we will find xxxConfig.h
+  \${PROJECT_BINARY_DIR})
+
+add_definitions(-g -O2 -fsigned-char -freg-struct-return -Wshadow -Wstrict-prototypes -Wpointer-arith -Winline -nostdlib)
+
+set (CMAKE_INSTALL_PREFIX \"/opt/pehu\")
+" | cat > ${fname}
+else
+    lib=SHARED
+    echo "
+option(FASTCALL_DISABLE \"fast call disable\" OFF)
+
+include_directories(
+)
+"  | cat > ${fname}
+fi
+
+echo "
+add_subdirectory(libsrc)
+add_subdirectory(www)
+add_subdirectory(sql)
+" | cat > ${fname}
+
+if [ "$type" == "normal" ]; then
+    echo "
+SET(CPACK_GENERATOR \"DEB\")
+SET(CPACK_DEBIAN_PACKAGE_MAINTAINER \"Toto Tata\") #required
+
+set(CPACK_PACKAGE_VERSION \"0.1.0\")
+set(CPACK_PACKAGE_VERSION_MAJOR \"0\")
+set(CPACK_PACKAGE_VERSION_MINOR \"1\")
+set(CPACK_PACKAGE_VERSION_PATCH \"0\")
+
+set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+  \"${CMAKE_CURRENT_BINARY_DIR}/debconf/postinst\")
+
+INCLUDE(CPack)
+" | cat > ${fname}
+fi
+
+fname=${dirname}/libsrc/CMakeLists.txt
+echo "
+file(GLOB srcs *.c)
+
+add_library($2 ${lib} \${srcs})
+
+add_custom_command(TARGET $2
+  POST_BUILD
+  COMMAND bash \${CMAKE_INSTALL_PREFIX}/bin/gen_addresource.sh ARGS \${CMAKE_INSTALL_PREFIX} \${CMAKE_CURRENT_SOURCE_DIR}/../$2.json \${CMAKE_BINARY_DIR}/debconf/postinstall.tmp 
+  WORKING_DIRECTORY \${CMAKE_BINARY_DIR}
+  COMMENT \"Building public postinstall\")
+
+install(TARGETS $2 LIBRARY DESTINATION \${CMAKE_INSTALL_PREFIX}/lib)
+" | cat > ${fname}
+
+fname=${dirname}/www/CMakeLists.txt
+echo "install(DIRECTORY services controllers views 
+  DESTINATION \${CMAKE_INSTALL_PREFIX}/modules/$2/www)"  | cat > ${fname}
+
+fname=${dirname}/sql/CMakeLists.txt
+echo "
+file(GLOB srcs *.sql)
+
+install(FILES \${src}
+  DESTINATION \${CMAKE_INSTALL_PREFIX}/modules/$2/sql )
+" | cat > ${fname}
+
+#echo post script editing...
+
+# fname=${dirname}/postinst
+# echo "
+# #!/bin/bash
+# # postinst script 
+
+# echo resources inserting ...
+# pehu-control --add-resource resources.json
+# pehu-control --add-menu menu.json
+# " | cat > ${fname}
+
+
+# fname=${dirname}/prerm
+# echo "
+# #!/bin/bash
+# # postinst script 
+
+# echo resources deleting ...
+# pehu-control --del-resource $2
+# pehu-control --del-menu $2
+# " | cat > ${fname}

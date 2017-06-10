@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# $1 : module name
+# $2 : module directory
+# $3 : work directory
+# $4 : user
+if [ -d $3 ]; then
+    mkdir $3/$1
+else
+    echo "$3 is not a directory"
+    exit 1
+fi
+
+cd $3/$1
+git clone git@192.168.210.103:gitolite-admin 
+[[ $? -ne 0 ]] && exit 1
+  
+cd gitolite-admin
+echo "repo $1" >> conf/gitolite.conf
+echo -e "\tRW+ = git-admin" >> conf/gitolite.conf
+echo "added module=$1" | xargs --null git commit -a -m 
+
+git push
+[[ $? -ne 0 ]] && rm -rf ../gitolite-admin && exit 1
+
+/opt/pehu/bin/assoc-user.sh $1 $4 $2 $4
+rm -rf $3/$1
