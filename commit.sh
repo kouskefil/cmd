@@ -1,13 +1,11 @@
 #!/bin/bash
 
-#$1 module name
-#$2 local modules directory
-#$3 user
-#$4 commit message
+#$1 module dir
+#$2 commit message
 
-cd $2/$3/$1
+cd $1
 
 git add --all
-git commit -m "$4" 
+git commit -m "$2" 
 
 
